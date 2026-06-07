@@ -1,0 +1,13 @@
+services:
+  funasr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bytedesk-funasr
+    ports:
+      - "8000:8000"
+    environment:
+      FUNASR_DEVICE: cpu
+      FUNASR_MODEL: iic/SenseVoiceSmall
+      FUNASR_VAD_MODEL: fsmn-vad
+    restart: unless-stopped

@@ -1,0 +1,11 @@
+.git
+.gitignore
+__pycache__
+.pytest_cache
+*.pyc
+*.pyo
+*.pyd
+*.wav
+*.mp3
+*.m4a
+*.flac
