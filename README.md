@@ -1,4 +1,4 @@
-# bytedesk-funasr
+# bytedesk-ttsasr
 
 基于 FunASR 的 Docker 化语音识别服务，提供 HTTP 接口，方便被其他服务直接调用实现 ASR。
 
@@ -77,8 +77,8 @@ docker compose up --build
 ### 方式二：Docker
 
 ```bash
-docker build -t bytedesk-funasr .
-docker run --rm -p 8000:8000 bytedesk-funasr
+docker build -t bytedesk-ttsasr .
+docker run --rm -p 8000:8000 bytedesk-ttsasr
 ```
 
 ## 环境变量
