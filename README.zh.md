@@ -17,10 +17,19 @@
 
 ```text
 .
+├── .github
+│   └── workflows
+│       └── ttsasr-docker.yml
 ├── app
-│   └── main.py
+│   ├── main.py
+│   ├── model_provider.py
+│   └── utils.py
 ├── Dockerfile
 ├── docker-compose.yml
+├── README.md
+├── README.zh.md
+├── TODO.md
+├── LICENSE
 └── requirements.txt
 ```
 
