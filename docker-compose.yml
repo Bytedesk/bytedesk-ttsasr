@@ -14,6 +14,7 @@ services:
         QWEN_TTS_DOWNLOAD_ON_BUILD: "false"
     container_name: bytedesk-ttsasr
     ports:
+      # 本地默认端口
       - "8000:8000"
     environment:
       # 运行设备: cpu 或 cuda
@@ -58,4 +59,23 @@ services:
       QWEN_TTS_PRELOAD: "false"
       # 语音文件保存目录（留空则不保存到本地，建议挂载宿主机目录后再配置）
       # TTS_OUTPUT_DIR: /app/output
+
+    # 避免 VoxCPM 首次加载时 OOM（可按宿主机情况调整）
+    mem_limit: 16g
+    memswap_limit: 24g
+
+    # 复用模型缓存，避免每次重启重复下载大模型
+    volumes:
+      - modelscope-cache:/root/.cache/modelscope
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # 首次冷启动（下载/加载模型）可能很久，避免过早判定不健康
+      start_period: 600s
     restart: unless-stopped
+
+volumes:
+  modelscope-cache:
