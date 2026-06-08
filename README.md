@@ -36,11 +36,28 @@ curl -X POST http://localhost:8000/v1/asr/transcriptions \
   -F language=auto
 ```
 
+也支持通过音频 URL 识别（`file` 与 `url` 二选一）：
+
+```bash
+curl -X POST http://localhost:8000/v1/asr/transcriptions \
+  -F 'url=https://example.com/sample.wav' \
+  -F language=auto
+```
+
 ### OpenAI 兼容接口
 
 ```bash
 curl -X POST http://localhost:8000/v1/audio/transcriptions \
   -F file=@sample.wav \
+  -F model=funasr \
+  -F response_format=json
+```
+
+URL 方式示例：
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/transcriptions \
+  -F 'url=https://sip.weiyuai.cn/freeswitch-recordings/ivr-5002_013311156272_1846b772-f8d2-4324-b6f5-8d1742208f1f_2026-06-05-17-40-11.wav' \
   -F model=funasr \
   -F response_format=json
 ```
@@ -62,6 +79,7 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 可选表单参数：
 
 - `language`: 默认 `auto`
+- `file` / `url`: 二选一，分别表示上传文件或远程音频地址（仅支持 `http/https`）
 - `hotword`: 热词，多个词可用空格分隔
 - `batch_size`: 默认 `1`
 - `response_format`: 支持 `json` 和 `text`
@@ -81,6 +99,41 @@ docker build -t bytedesk-ttsasr .
 docker run --rm -p 8000:8000 bytedesk-ttsasr
 ```
 
+### 方式三：本地 Python 直接运行（不使用 Docker）
+
+- 创建并激活虚拟环境
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+- 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+- 启动服务
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+- 验证服务
+
+```bash
+curl http://localhost:8000/health
+```
+
+如需切换模型或设备，可先设置环境变量再启动，例如：
+
+```bash
+export FUNASR_DEVICE=cpu
+export FUNASR_MODEL=iic/SenseVoiceSmall
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
 ## 环境变量
 
 - `FUNASR_DEVICE`: `cpu` 或 `cuda`，默认 `cpu`
@@ -90,6 +143,7 @@ docker run --rm -p 8000:8000 bytedesk-ttsasr
 - `FUNASR_SPK_MODEL`: 可选，说话人分离模型
 - `FUNASR_HUB`: 可选，模型来源
 - `FUNASR_TRUST_REMOTE_CODE`: 可选，`true/false`
+- `FUNASR_MAX_URL_FILE_SIZE`: 可选，URL 下载音频最大字节数，默认 `52428800`（50MB）
 
 如果要使用 GPU，可在宿主机已安装 NVIDIA Container Toolkit 的前提下，将 `FUNASR_DEVICE=cuda`，并按需调整容器运行参数。
 
