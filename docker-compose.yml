@@ -10,16 +10,16 @@ services:
       # 运行设备: cpu 或 cuda
       FUNASR_DEVICE: cpu
 
-      # 主模型
+      # 主模型 iic/SenseVoiceSmall、paraformer-zh
       FUNASR_MODEL: iic/SenseVoiceSmall
 
       # 可选子模型（VAD/标点/说话人分离）
       FUNASR_VAD_MODEL: fsmn-vad
-      FUNASR_PUNC_MODEL: ct-punc
-      FUNASR_SPK_MODEL: cam++
+      # FUNASR_PUNC_MODEL: ct-punc
+      # FUNASR_SPK_MODEL: cam++
 
       # 模型来源（留空表示使用默认来源）
-      FUNASR_HUB: ""
+      # FUNASR_HUB: ""
 
       # 是否信任远端代码（仅在必要模型场景开启）
       FUNASR_TRUST_REMOTE_CODE: "false"
