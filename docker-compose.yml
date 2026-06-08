@@ -29,4 +29,10 @@ services:
 
       # URL 音频下载最大字节数（默认 50MB）
       FUNASR_MAX_URL_FILE_SIZE: "52428800"
+
+      # VoxCPM TTS 配置
+      VOXCPM_MODEL: openbmb/VoxCPM2
+      VOXCPM_DEVICE: cpu
+      VOXCPM_LOAD_DENOISER: "false"
+      VOXCPM_PRELOAD: "false"
     restart: unless-stopped

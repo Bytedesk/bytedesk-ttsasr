@@ -1,29 +1,44 @@
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile # type: ignore
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile # type: ignore
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse, Response # type: ignore
-from app.model_provider import get_model
-from app.utils import _clean_result, _download_audio_from_url, _env_int
+from app.model_provider import get_asr_model, get_tts_model
+from app.utils import _clean_result, _download_audio_from_url, _env_bool, _env_int, _save_upload_file, _wav_bytes_from_array
 
 
 app = FastAPI(
-    title="FunASR Service",
-    version="0.1.0",
-    description="Dockerized FunASR HTTP service for ASR transcription.",
+    title="Bytedesk Speech Service",
+    version="0.2.0",
+    description="Dockerized speech service for FunASR ASR and VoxCPM TTS.",
 )
+
+
+class SpeechRequest(BaseModel):
+    input: str
+    model: str = "voxcpm"
+    voice: str = "default"
+    response_format: str = "wav"
+    speed: float = 1.0
+    cfg_value: float = 2.0
+    inference_timesteps: int = 10
+    reference_audio_url: Optional[str] = None
+    prompt_audio_url: Optional[str] = None
+    prompt_text: Optional[str] = None
 
 
 @app.on_event("startup")
 def startup_event() -> None:
-    get_model()
+    get_asr_model()
+    if _env_bool("VOXCPM_PRELOAD", False):
+        get_tts_model()
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    get_model()
+    get_asr_model()
     return {"status": "ok"}
 
 
@@ -43,15 +58,7 @@ async def _transcribe_impl(
 
     try:
         if file is not None:
-            source_filename = file.filename or "audio.wav"
-            suffix = Path(source_filename).suffix or ".wav"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-                while True:
-                    chunk = await file.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    temp_file.write(chunk)
-                temp_path = temp_file.name
+            temp_path, source_filename = await _save_upload_file(file, "audio.wav")
         else:
             max_bytes = _env_int("FUNASR_MAX_URL_FILE_SIZE", 50 * 1024 * 1024)
             temp_path, source_filename = _download_audio_from_url(url=url or "", max_bytes=max_bytes)
@@ -65,7 +72,7 @@ async def _transcribe_impl(
         if hotword:
             generate_kwargs["hotword"] = hotword
 
-        result = get_model().generate(**generate_kwargs)
+        result = get_asr_model().generate(**generate_kwargs)
         payload = _clean_result(result)
         payload.setdefault("text", payload.get("text", ""))
         payload["filename"] = source_filename
@@ -122,3 +129,111 @@ async def openai_transcribe(
         batch_size=batch_size,
         response_format=response_format,
     )
+
+
+@app.post("/v1/audio/speech")
+async def openai_speech(
+    request: Request,
+    input: Optional[str] = Form(default=None),
+    model: str = Form(default="voxcpm"),
+    voice: str = Form(default="default"),
+    response_format: str = Form(default="wav"),
+    speed: float = Form(default=1.0),
+    cfg_value: float = Form(default=2.0),
+    inference_timesteps: int = Form(default=10),
+    prompt_text: Optional[str] = Form(default=None),
+    reference_audio_url: Optional[str] = Form(default=None),
+    prompt_audio_url: Optional[str] = Form(default=None),
+    reference_audio: Optional[UploadFile] = File(default=None),
+    prompt_audio: Optional[UploadFile] = File(default=None),
+) -> Response:
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("application/json"):
+        request_payload = SpeechRequest.model_validate(await request.json())
+    else:
+        request_payload = SpeechRequest(
+            input=input or "",
+            model=model,
+            voice=voice,
+            response_format=response_format,
+            speed=speed,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+            reference_audio_url=reference_audio_url,
+            prompt_audio_url=prompt_audio_url,
+            prompt_text=prompt_text,
+        )
+
+    if not request_payload.input.strip():
+        raise HTTPException(status_code=400, detail="input 不能为空")
+    if request_payload.response_format != "wav":
+        raise HTTPException(status_code=400, detail="当前仅支持 wav 输出")
+    if request_payload.speed <= 0:
+        raise HTTPException(status_code=400, detail="speed 必须大于 0")
+    if reference_audio is not None and request_payload.reference_audio_url:
+        raise HTTPException(status_code=400, detail="reference_audio 和 reference_audio_url 只能二选一")
+    if prompt_audio is not None and request_payload.prompt_audio_url:
+        raise HTTPException(status_code=400, detail="prompt_audio 和 prompt_audio_url 只能二选一")
+
+    text = request_payload.input.strip()
+    if request_payload.voice and request_payload.voice != "default":
+        text = f"({request_payload.voice}){text}"
+
+    temp_paths: list[str] = []
+    tts_generate_kwargs: dict[str, Any] = {
+        "text": text,
+        "cfg_value": request_payload.cfg_value,
+        "inference_timesteps": request_payload.inference_timesteps,
+    }
+
+    try:
+        max_bytes = _env_int("FUNASR_MAX_URL_FILE_SIZE", 50 * 1024 * 1024)
+        if reference_audio is not None:
+            reference_audio_path, _ = await _save_upload_file(reference_audio, "reference.wav")
+            temp_paths.append(reference_audio_path)
+            tts_generate_kwargs["reference_wav_path"] = reference_audio_path
+        elif request_payload.reference_audio_url:
+            reference_audio_path, _ = _download_audio_from_url(
+                url=request_payload.reference_audio_url,
+                max_bytes=max_bytes,
+            )
+            temp_paths.append(reference_audio_path)
+            tts_generate_kwargs["reference_wav_path"] = reference_audio_path
+
+        if prompt_audio is not None:
+            prompt_audio_path, _ = await _save_upload_file(prompt_audio, "prompt.wav")
+            temp_paths.append(prompt_audio_path)
+            tts_generate_kwargs["prompt_wav_path"] = prompt_audio_path
+        elif request_payload.prompt_audio_url:
+            prompt_audio_path, _ = _download_audio_from_url(
+                url=request_payload.prompt_audio_url,
+                max_bytes=max_bytes,
+            )
+            temp_paths.append(prompt_audio_path)
+            tts_generate_kwargs["prompt_wav_path"] = prompt_audio_path
+
+        if request_payload.prompt_text:
+            tts_generate_kwargs["prompt_text"] = request_payload.prompt_text
+
+        model = get_tts_model()
+        wav = model.generate(**tts_generate_kwargs)
+        sample_rate = int(getattr(model.tts_model, "sample_rate", 48000))
+        audio_bytes = _wav_bytes_from_array(wav, sample_rate)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - runtime dependency failures
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        for temp_path in temp_paths:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+        if reference_audio is not None:
+            await reference_audio.close()
+        if prompt_audio is not None:
+            await prompt_audio.close()
+
+    headers = {
+        "Content-Disposition": 'inline; filename="speech.wav"',
+        "X-Speech-Model": request_payload.model,
+    }
+    return Response(content=audio_bytes, media_type="audio/wav", headers=headers)

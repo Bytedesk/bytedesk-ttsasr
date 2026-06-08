@@ -1,11 +1,14 @@
+import io
 import os
 import tempfile
+import wave
 from pathlib import Path
 from typing import Any, Optional, Tuple
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
-from fastapi import HTTPException  # type: ignore
+from fastapi import HTTPException, UploadFile  # type: ignore
+import numpy as np
 
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -91,3 +94,40 @@ def _download_audio_from_url(url: str, max_bytes: int) -> Tuple[str, str]:
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"下载 url 音频失败: {exc}") from exc
+
+
+async def _save_upload_file(upload: UploadFile, fallback_name: str) -> Tuple[str, str]:
+    filename = upload.filename or fallback_name
+    suffix = Path(filename).suffix or Path(fallback_name).suffix or ".wav"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            temp_file.write(chunk)
+        return temp_file.name, filename
+
+
+def _wav_bytes_from_array(audio: Any, sample_rate: int) -> bytes:
+    audio_array = np.asarray(audio, dtype=np.float32)
+    if audio_array.size == 0:
+        raise HTTPException(status_code=500, detail="TTS 生成的音频为空")
+
+    if audio_array.ndim == 1:
+        channels = 1
+    elif audio_array.ndim == 2:
+        channels = audio_array.shape[1]
+    else:
+        raise HTTPException(status_code=500, detail="TTS 音频维度不受支持")
+
+    pcm16 = np.clip(audio_array, -1.0, 1.0)
+    pcm16 = (pcm16 * 32767.0).astype(np.int16)
+
+    with io.BytesIO() as buffer:
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(channels)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm16.tobytes())
+        return buffer.getvalue()

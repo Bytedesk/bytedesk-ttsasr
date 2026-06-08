@@ -5,7 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     FUNASR_DEVICE=cpu \
     FUNASR_MODEL=iic/SenseVoiceSmall \
-    FUNASR_VAD_MODEL=fsmn-vad
+    FUNASR_VAD_MODEL=fsmn-vad \
+    VOXCPM_MODEL=openbmb/VoxCPM2 \
+    VOXCPM_DEVICE=cpu \
+    VOXCPM_LOAD_DENOISER=false \
+    VOXCPM_PRELOAD=false
 
 WORKDIR /app
 

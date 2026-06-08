@@ -1,13 +1,15 @@
 # bytedesk-ttsasr
 
-基于 FunASR 的 Docker 化语音识别服务，提供 HTTP 接口，方便被其他服务直接调用实现 ASR。
+基于 FunASR + VoxCPM 的 Docker 化语音服务，提供 HTTP 接口，方便被其他服务直接调用实现 ASR 和 TTS。
 
 **语言 / Language:** [中文](README.zh.md) | [English](README.md)
 
 ## 功能
 
 - 上传音频文件后返回识别结果
+- 文本转语音，返回 wav 音频流
 - 默认使用 `iic/SenseVoiceSmall + fsmn-vad`
+- 默认使用 `openbmb/VoxCPM2` 提供 TTS
 - 支持通过环境变量切换模型、设备和可选能力
 - 适合以 Docker / Docker Compose 方式部署
 
@@ -86,6 +88,54 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 - `batch_size`: 默认 `1`
 - `response_format`: 支持 `json` 和 `text`
 
+### OpenAI 兼容 TTS
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "voxcpm",
+    "input": "你好，欢迎使用 Bytedesk 语音服务。",
+    "voice": "年轻女声，温柔自然",
+    "response_format": "wav"
+  }' \
+  --output speech.wav
+```
+
+说明：
+
+- `input`: 必填，要合成的文本
+- `voice`: 可选，除 `default` 外会作为 VoxCPM 的音色描述前缀拼接到文本前，例如 `(年轻女声，温柔自然)你好`
+- `response_format`: 当前仅支持 `wav`
+- `cfg_value`: 可选，默认 `2.0`
+- `inference_timesteps`: 可选，默认 `10`
+
+声音克隆示例，支持上传参考音频或传 URL：
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -F input='这是一个声音克隆示例。' \
+  -F reference_audio=@voice.wav \
+  --output clone.wav
+```
+
+高保真续写示例：
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -F input='这是一个高保真声音克隆示例。' \
+  -F prompt_audio=@voice.wav \
+  -F prompt_text='参考音频对应的文本。' \
+  -F reference_audio=@voice.wav \
+  --output hifi_clone.wav
+```
+
+克隆相关参数：
+
+- `reference_audio` / `reference_audio_url`: 可选，参考音频，二选一
+- `prompt_audio` / `prompt_audio_url`: 可选，提示音频，二选一
+- `prompt_text`: 可选，提示音频的文本内容；与 `prompt_audio` 配合可实现高保真续写
+
 ## 快速启动
 
 ### 方式一：Docker Compose
@@ -133,6 +183,8 @@ curl http://localhost:8000/health
 ```bash
 export FUNASR_DEVICE=cpu
 export FUNASR_MODEL=iic/SenseVoiceSmall
+export VOXCPM_MODEL=openbmb/VoxCPM2
+export VOXCPM_DEVICE=cpu
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -146,6 +198,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `FUNASR_HUB`: 可选，模型来源
 - `FUNASR_TRUST_REMOTE_CODE`: 可选，`true/false`
 - `FUNASR_MAX_URL_FILE_SIZE`: 可选，URL 下载音频最大字节数，默认 `52428800`（50MB）
+- `VOXCPM_MODEL`: 默认 `openbmb/VoxCPM2`
+- `VOXCPM_DEVICE`: 默认 `cpu`，可按需设置为 `cuda`
+- `VOXCPM_LOAD_DENOISER`: 是否加载 denoiser，默认 `false`
+- `VOXCPM_PRELOAD`: 容器启动时是否预加载 TTS 模型，默认 `false`
 
 如果要使用 GPU，可在宿主机已安装 NVIDIA Container Toolkit 的前提下，将 `FUNASR_DEVICE=cuda`，并按需调整容器运行参数。
 
@@ -153,7 +209,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 - 容器首次启动会下载模型，耗时取决于网络情况
 - CPU 模式可直接运行，但识别速度较 GPU 慢
+- VoxCPM 体积较大，首次请求 TTS 时会额外下载模型
 - 当前接口直接返回 FunASR 原始结果，并补充了 `filename`
+- `/v1/audio/speech` 当前返回 `audio/wav`，适合直接对接 OpenAI 风格 TTS 调用
 - 当前镜像默认优先支持 wav、flac 等常见无损音频；如果你需要更广泛的音频格式转码能力，可在镜像中额外安装 ffmpeg
 
 

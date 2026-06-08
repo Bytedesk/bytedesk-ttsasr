@@ -7,7 +7,7 @@ from app.utils import _env, _env_bool
 
 
 @lru_cache(maxsize=1)
-def get_model() -> AutoModel:
+def get_asr_model() -> AutoModel:
     model_name = _env("FUNASR_MODEL", "iic/SenseVoiceSmall")
     model_kwargs: dict[str, Any] = {
         "model": model_name,
@@ -29,3 +29,19 @@ def get_model() -> AutoModel:
         model_kwargs["trust_remote_code"] = True
 
     return AutoModel(**model_kwargs)
+
+
+@lru_cache(maxsize=1)
+def get_tts_model() -> Any:
+    try:
+        from voxcpm import VoxCPM  # type: ignore
+    except ImportError as exc:  # pragma: no cover - depends on optional runtime dependency
+        raise RuntimeError(
+            "未安装 voxcpm 依赖，请确认镜像已安装 VoxCPM 所需包"
+        ) from exc
+
+    return VoxCPM.from_pretrained(
+        _env("VOXCPM_MODEL", "openbmb/VoxCPM2"),
+        device=_env("VOXCPM_DEVICE", "cpu"),
+        load_denoiser=_env_bool("VOXCPM_LOAD_DENOISER", False),
+    )
