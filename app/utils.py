@@ -109,6 +109,10 @@ async def _save_upload_file(upload: UploadFile, fallback_name: str) -> Tuple[str
         return temp_file.name, filename
 
 
+def _get_speech_output_dir() -> Optional[str]:
+    return _env("TTS_OUTPUT_DIR")
+
+
 def _wav_bytes_from_array(audio: Any, sample_rate: int) -> bytes:
     audio_array = np.asarray(audio, dtype=np.float32)
     if audio_array.size == 0:

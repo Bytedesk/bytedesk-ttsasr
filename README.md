@@ -21,6 +21,7 @@
 │   └── workflows
 │       └── ttsasr-docker.yml
 ├── app
+│   ├── download_models.py
 │   ├── main.py
 │   ├── model_provider.py
 │   └── utils.py
@@ -259,6 +260,30 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `QWEN_TTS_LANGUAGE`: 默认 `Auto`
 - `QWEN_TTS_SPEAKER`: CustomVoice 默认说话人，默认 `Vivian`
 - `QWEN_TTS_PRELOAD`: 容器启动时是否预加载 Qwen TTS 模型，默认 `false`
+- `TTS_OUTPUT_DIR`: 可选，语音文件生成目录路径；设置后每次 TTS 请求都会在该目录额外保存一份 wav 文件，文件名格式为 `{provider}_{timestamp}_{uuid}.wav`；留空（默认）则不保存
+
+## 构建参数（Build Args）
+
+通过 `docker build --build-arg` 或 `docker-compose.yml` 的 `build.args` 控制构建期行为：
+
+- `DOWNLOAD_MODELS_ON_BUILD`: 构建时是否下载模型，总开关，默认 `true`
+- `FUNASR_DOWNLOAD_ON_BUILD`: 是否下载 FunASR ASR 模型，默认 `true`
+- `VOXCPM_DOWNLOAD_ON_BUILD`: 是否下载 VoxCPM 模型（约 4.3GB），默认 `false`
+- `QWEN_TTS_DOWNLOAD_ON_BUILD`: 是否下载 Qwen3-TTS 模型（约 3.6GB），默认 `false`
+
+跳过所有模型下载（构建最快，应用启动后按需下载）：
+
+```bash
+docker build --build-arg DOWNLOAD_MODELS_ON_BUILD=false -t bytedesk-ttsasr .
+```
+
+构建时同时下载 VoxCPM：
+
+```bash
+docker build \
+  --build-arg VOXCPM_DOWNLOAD_ON_BUILD=true \
+  -t bytedesk-ttsasr .
+```
 
 如果要使用 GPU，可在宿主机已安装 NVIDIA Container Toolkit 的前提下，将 `FUNASR_DEVICE=cuda`，并按需调整容器运行参数。
 
@@ -273,7 +298,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - 当前接口直接返回 FunASR 原始结果，并补充了 `filename`
 - `/v1/audio/speech` 当前返回 `audio/wav`，适合直接对接 OpenAI 风格 TTS 调用
 - 当前镜像默认优先支持 wav、flac 等常见无损音频；如果你需要更广泛的音频格式转码能力，可在镜像中额外安装 ffmpeg
-
 
 ## Server
 

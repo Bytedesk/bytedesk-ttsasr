@@ -6,7 +6,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile # ty
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse, Response # type: ignore
 from app.model_provider import get_asr_model, get_qwen_tts_model, get_tts_model
-from app.utils import _clean_result, _download_audio_from_url, _env, _env_bool, _env_int, _save_upload_file, _wav_bytes_from_array
+from app.utils import _clean_result, _download_audio_from_url, _env, _env_bool, _env_int, _get_speech_output_dir, _save_upload_file, _wav_bytes_from_array
 
 
 app = FastAPI(
@@ -288,6 +288,16 @@ async def openai_speech(
             await reference_audio.close()
         if prompt_audio is not None:
             await prompt_audio.close()
+
+    output_dir = _get_speech_output_dir()
+    if output_dir:
+        import uuid as _uuid
+        import datetime as _dt
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{provider}_{ts}_{_uuid.uuid4().hex[:8]}.wav"
+        (out_path / filename).write_bytes(audio_bytes)
 
     headers = {
         "Content-Disposition": 'inline; filename="speech.wav"',

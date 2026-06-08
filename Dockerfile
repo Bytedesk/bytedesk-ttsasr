@@ -19,7 +19,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     QWEN_TTS_DEVICE_MAP=cpu \
     QWEN_TTS_LANGUAGE=Auto \
     QWEN_TTS_SPEAKER=Vivian \
-    QWEN_TTS_PRELOAD=false
+    QWEN_TTS_PRELOAD=false \
+    TTS_OUTPUT_DIR=
 
 WORKDIR /app
 
@@ -33,6 +34,22 @@ RUN pip install --upgrade pip setuptools wheel \
     && pip install --no-build-isolation -r requirements.txt
 
 COPY app ./app
+
+# 构建时模型下载控制（通过 --build-arg 覆盖）
+# DOWNLOAD_MODELS_ON_BUILD  总开关，默认 true
+# FUNASR_DOWNLOAD_ON_BUILD  是否下载 ASR 模型，默认 true
+# VOXCPM_DOWNLOAD_ON_BUILD  是否下载 VoxCPM（约 4.3GB），默认 false
+# QWEN_TTS_DOWNLOAD_ON_BUILD 是否下载 Qwen3-TTS（约 3.6GB），默认 false
+ARG DOWNLOAD_MODELS_ON_BUILD=true
+ARG FUNASR_DOWNLOAD_ON_BUILD=true
+ARG VOXCPM_DOWNLOAD_ON_BUILD=false
+ARG QWEN_TTS_DOWNLOAD_ON_BUILD=false
+
+RUN DOWNLOAD_MODELS_ON_BUILD=${DOWNLOAD_MODELS_ON_BUILD} \
+    FUNASR_DOWNLOAD_ON_BUILD=${FUNASR_DOWNLOAD_ON_BUILD} \
+    VOXCPM_DOWNLOAD_ON_BUILD=${VOXCPM_DOWNLOAD_ON_BUILD} \
+    QWEN_TTS_DOWNLOAD_ON_BUILD=${QWEN_TTS_DOWNLOAD_ON_BUILD} \
+    python app/download_models.py
 
 EXPOSE 8000
 

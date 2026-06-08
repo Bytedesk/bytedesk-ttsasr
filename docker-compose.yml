@@ -3,6 +3,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # 构建时是否下载模型（总开关），默认 true
+        DOWNLOAD_MODELS_ON_BUILD: "true"
+        # 是否下载 FunASR ASR 模型，默认 true
+        FUNASR_DOWNLOAD_ON_BUILD: "true"
+        # 是否下载 VoxCPM 模型（约 4.3GB），默认 false
+        VOXCPM_DOWNLOAD_ON_BUILD: "false"
+        # 是否下载 Qwen3-TTS 模型（约 3.6GB），默认 false
+        QWEN_TTS_DOWNLOAD_ON_BUILD: "false"
     container_name: bytedesk-ttsasr
     ports:
       - "8000:8000"
@@ -47,4 +56,6 @@ services:
       QWEN_TTS_LANGUAGE: Auto
       QWEN_TTS_SPEAKER: Vivian
       QWEN_TTS_PRELOAD: "false"
+      # 语音文件保存目录（留空则不保存到本地，建议挂载宿主机目录后再配置）
+      # TTS_OUTPUT_DIR: /app/output
     restart: unless-stopped
