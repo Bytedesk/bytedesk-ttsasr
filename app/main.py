@@ -1,18 +1,32 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile # type: ignore
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse, Response # type: ignore
+from app.download_models import download_model_by_name, get_model_download_status, list_model_download_status
 from app.model_provider import get_asr_model, get_qwen_tts_model, get_tts_model
 from app.utils import _clean_result, _download_audio_from_url, _env, _env_bool, _env_int, _get_speech_output_dir, _save_upload_file, _wav_bytes_from_array
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if _env_bool("FUNASR_PRELOAD", False):
+        get_asr_model()
+    if _env_bool("VOXCPM_PRELOAD", False):
+        get_tts_model()
+    if _env_bool("QWEN_TTS_PRELOAD", False):
+        get_qwen_tts_model()
+    yield
 
 
 app = FastAPI(
     title="Bytedesk Speech Service",
     version="0.2.0",
     description="Dockerized speech service for FunASR ASR and VoxCPM TTS.",
+    lifespan=lifespan,
 )
 
 
@@ -27,22 +41,42 @@ class SpeechRequest(BaseModel):
     inference_timesteps: int = 10
     reference_audio_url: Optional[str] = None
     prompt_audio_url: Optional[str] = None
+
+
+class ModelDownloadRequest(BaseModel):
+    model: str
     prompt_text: Optional[str] = None
-
-
-@app.on_event("startup")
-def startup_event() -> None:
-    if _env_bool("FUNASR_PRELOAD", False):
-        get_asr_model()
-    if _env_bool("VOXCPM_PRELOAD", False):
-        get_tts_model()
-    if _env_bool("QWEN_TTS_PRELOAD", False):
-        get_qwen_tts_model()
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/v1/models/download-status")
+def model_download_status(model: Optional[str] = None) -> dict[str, Any]:
+    try:
+        if model:
+            return {"data": get_model_download_status(model)}
+        return {"data": list_model_download_status()}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/v1/models/download")
+def download_model(payload: ModelDownloadRequest) -> dict[str, Any]:
+    try:
+        result = download_model_by_name(payload.model)
+        return {
+            "message": f"模型 {result['display_name']} 下载完成",
+            "data": result,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 async def _transcribe_impl(

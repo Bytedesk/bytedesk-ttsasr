@@ -36,13 +36,107 @@
 
 ## 接口
 
+服务默认监听 `8000` 端口，以下示例均假设服务地址为 `http://localhost:8000`。
+
+接口列表：
+
+- `GET /health`: 健康检查
+- `GET /v1/models/download-status`: 查询模型下载状态
+- `POST /v1/models/download`: 主动下载模型
+- `POST /v1/asr/transcriptions`: ASR 转写
+- `POST /v1/audio/transcriptions`: OpenAI 兼容 ASR 转写
+- `POST /v1/audio/speech`: OpenAI 兼容 TTS
+
 ### 健康检查
 
 ```bash
 curl http://localhost:8000/health
 ```
 
+返回示例：
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### 模型下载状态
+
+支持的模型名：`funasr`、`voxcpm`、`qwen-tts`。
+
+查询全部模型状态：
+
+```bash
+curl http://localhost:8000/v1/models/download-status
+```
+
+查询指定模型状态：
+
+```bash
+curl 'http://localhost:8000/v1/models/download-status?model=funasr'
+```
+
+触发模型下载：
+
+```bash
+curl -X POST http://localhost:8000/v1/models/download \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen-tts"}'
+```
+
+查询返回示例：
+
+```json
+{
+  "data": [
+    {
+      "model": "funasr",
+      "display_name": "FunASR",
+      "downloaded": true,
+      "items": [
+        {
+          "model_id": "iic/SenseVoiceSmall",
+          "downloaded": true
+        },
+        {
+          "model_id": "fsmn-vad",
+          "downloaded": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+下载返回示例：
+
+```json
+{
+  "message": "模型 Qwen3-TTS 下载完成",
+  "data": {
+    "model": "qwen-tts",
+    "display_name": "Qwen3-TTS",
+    "downloaded": true,
+    "items": [
+      {
+        "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "downloaded": true
+      }
+    ]
+  }
+}
+```
+
+说明：
+
+- `GET /v1/models/download-status`: 不传 `model` 时返回全部模型状态；传入 `model` 时返回单个模型状态
+- `POST /v1/models/download`: 请求体为 JSON，格式为 `{"model":"funasr"}`
+- 当 `model` 不合法时，接口返回 `400`
+
 ### 语音识别
+
+请求方式：`multipart/form-data`
 
 ```bash
 curl -X POST http://localhost:8000/v1/asr/transcriptions \
@@ -98,7 +192,14 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 - `batch_size`: 默认 `1`
 - `response_format`: 支持 `json` 和 `text`
 
+约束：
+
+- `file` 和 `url` 必须二选一，同时为空或同时传入都会返回 `400`
+- 远程音频下载大小受 `FUNASR_MAX_URL_FILE_SIZE` 控制，默认 `50MB`
+
 ### OpenAI 兼容 TTS
+
+请求方式同时支持 `application/json` 和 `multipart/form-data`。
 
 ```bash
 curl -X POST http://localhost:8000/v1/audio/speech \
@@ -173,6 +274,18 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `reference_audio` / `reference_audio_url`: 可选，参考音频，二选一
 - `prompt_audio` / `prompt_audio_url`: 可选，提示音频，二选一
 - `prompt_text`: 可选，提示音频的文本内容；与 `prompt_audio` 配合可实现高保真续写
+
+  返回说明：
+
+  - 成功时直接返回 `audio/wav` 二进制内容
+  - 响应头会附带 `X-Speech-Model` 和 `X-TTS-Provider`
+  - `response_format` 当前仅支持 `wav`，否则返回 `400`
+
+  使用建议：
+
+  - `voxcpm` 适合通用 TTS；`qwen-tts` 适合自定义音色和克隆场景
+  - 如果使用 Qwen Base 模型进行克隆，建议同时传入 `reference_audio` 和 `prompt_text`
+  - `reference_audio` 与 `reference_audio_url` 不能同时传，`prompt_audio` 与 `prompt_audio_url` 不能同时传
 
 ## 快速启动
 
@@ -295,6 +408,7 @@ docker build \
 - 默认 `VOXCPM_SOURCE=modelscope`，优先从 ModelScope 下载 VoxCPM；如需切换可改为 `auto` 或 `huggingface`
 - Qwen3-TTS 同样支持 ModelScope 下载，且可通过 `/v1/audio/speech` 的 `model=qwen-tts` 启用
 - VoxCPM 体积较大，首次请求 TTS 时会额外下载模型
+- 可通过 `/v1/models/download-status` 查看 `funasr`、`voxcpm`、`qwen-tts` 是否已缓存，并通过 `/v1/models/download` 主动下载
 - 当前接口直接返回 FunASR 原始结果，并补充了 `filename`
 - `/v1/audio/speech` 当前返回 `audio/wav`，适合直接对接 OpenAI 风格 TTS 调用
 - 当前镜像默认优先支持 wav、flac 等常见无损音频；如果你需要更广泛的音频格式转码能力，可在镜像中额外安装 ffmpeg
