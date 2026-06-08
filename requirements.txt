@@ -7,3 +7,4 @@ torch==2.8.0
 torchaudio==2.8.0
 uvicorn[standard]==0.35.0
 voxcpm
+qwen-tts

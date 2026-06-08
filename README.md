@@ -105,10 +105,38 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 说明：
 
 - `input`: 必填，要合成的文本
+- `model`: TTS provider，支持 `voxcpm`（默认）和 `qwen-tts`
 - `voice`: 可选，除 `default` 外会作为 VoxCPM 的音色描述前缀拼接到文本前，例如 `(年轻女声，温柔自然)你好`
 - `response_format`: 当前仅支持 `wav`
 - `cfg_value`: 可选，默认 `2.0`
 - `inference_timesteps`: 可选，默认 `10`
+
+使用 Qwen3-TTS（CustomVoice）示例：
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "qwen-tts",
+    "input": "你好，欢迎使用 Qwen3-TTS。",
+    "voice": "语气轻快自然",
+    "language": "Chinese",
+    "response_format": "wav"
+  }' \
+  --output qwen_tts.wav
+```
+
+使用 Qwen3-TTS（Base）克隆示例：
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -F model='qwen-tts' \
+  -F input='这是一个 Qwen3-TTS 克隆示例。' \
+  -F language='Chinese' \
+  -F reference_audio=@voice.wav \
+  -F prompt_text='参考音频对应文本。' \
+  --output qwen_clone.wav
+```
 
 声音克隆示例，支持上传参考音频或传 URL：
 
@@ -183,8 +211,17 @@ curl http://localhost:8000/health
 ```bash
 export FUNASR_DEVICE=cpu
 export FUNASR_MODEL=iic/SenseVoiceSmall
+export FUNASR_PRELOAD=false
 export VOXCPM_MODEL=openbmb/VoxCPM2
+export VOXCPM_SOURCE=modelscope
+export VOXCPM_MODELSCOPE_MODEL=OpenBMB/VoxCPM2
 export VOXCPM_DEVICE=cpu
+export QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+export QWEN_TTS_SOURCE=modelscope
+export QWEN_TTS_MODELSCOPE_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+export QWEN_TTS_DEVICE_MAP=cpu
+export QWEN_TTS_LANGUAGE=Auto
+export QWEN_TTS_SPEAKER=Vivian
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -198,10 +235,20 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `FUNASR_HUB`: 可选，模型来源
 - `FUNASR_TRUST_REMOTE_CODE`: 可选，`true/false`
 - `FUNASR_MAX_URL_FILE_SIZE`: 可选，URL 下载音频最大字节数，默认 `52428800`（50MB）
+- `FUNASR_PRELOAD`: 是否在服务启动时预加载 ASR 模型，默认 `false`
 - `VOXCPM_MODEL`: 默认 `openbmb/VoxCPM2`
+- `VOXCPM_SOURCE`: 模型来源，支持 `auto`、`huggingface`、`modelscope`，默认 `modelscope`
+- `VOXCPM_MODELSCOPE_MODEL`: ModelScope 模型名，默认 `OpenBMB/VoxCPM2`
 - `VOXCPM_DEVICE`: 默认 `cpu`，可按需设置为 `cuda`
 - `VOXCPM_LOAD_DENOISER`: 是否加载 denoiser，默认 `false`
 - `VOXCPM_PRELOAD`: 容器启动时是否预加载 TTS 模型，默认 `false`
+- `QWEN_TTS_MODEL`: 默认 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
+- `QWEN_TTS_SOURCE`: 模型来源，支持 `auto`、`huggingface`、`modelscope`，默认 `modelscope`
+- `QWEN_TTS_MODELSCOPE_MODEL`: ModelScope 模型名，默认 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
+- `QWEN_TTS_DEVICE_MAP`: 默认 `cpu`
+- `QWEN_TTS_LANGUAGE`: 默认 `Auto`
+- `QWEN_TTS_SPEAKER`: CustomVoice 默认说话人，默认 `Vivian`
+- `QWEN_TTS_PRELOAD`: 容器启动时是否预加载 Qwen TTS 模型，默认 `false`
 
 如果要使用 GPU，可在宿主机已安装 NVIDIA Container Toolkit 的前提下，将 `FUNASR_DEVICE=cuda`，并按需调整容器运行参数。
 
@@ -209,6 +256,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 - 容器首次启动会下载模型，耗时取决于网络情况
 - CPU 模式可直接运行，但识别速度较 GPU 慢
+- 默认不在启动阶段预加载 ASR/TTS，模型会在首次对应请求时下载并加载
+- 默认 `VOXCPM_SOURCE=modelscope`，优先从 ModelScope 下载 VoxCPM；如需切换可改为 `auto` 或 `huggingface`
+- Qwen3-TTS 同样支持 ModelScope 下载，且可通过 `/v1/audio/speech` 的 `model=qwen-tts` 启用
 - VoxCPM 体积较大，首次请求 TTS 时会额外下载模型
 - 当前接口直接返回 FunASR 原始结果，并补充了 `filename`
 - `/v1/audio/speech` 当前返回 `audio/wav`，适合直接对接 OpenAI 风格 TTS 调用

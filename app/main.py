@@ -5,8 +5,8 @@ from typing import Any, Optional
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile # type: ignore
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse, Response # type: ignore
-from app.model_provider import get_asr_model, get_tts_model
-from app.utils import _clean_result, _download_audio_from_url, _env_bool, _env_int, _save_upload_file, _wav_bytes_from_array
+from app.model_provider import get_asr_model, get_qwen_tts_model, get_tts_model
+from app.utils import _clean_result, _download_audio_from_url, _env, _env_bool, _env_int, _save_upload_file, _wav_bytes_from_array
 
 
 app = FastAPI(
@@ -20,6 +20,7 @@ class SpeechRequest(BaseModel):
     input: str
     model: str = "voxcpm"
     voice: str = "default"
+    language: str = "Auto"
     response_format: str = "wav"
     speed: float = 1.0
     cfg_value: float = 2.0
@@ -31,14 +32,16 @@ class SpeechRequest(BaseModel):
 
 @app.on_event("startup")
 def startup_event() -> None:
-    get_asr_model()
+    if _env_bool("FUNASR_PRELOAD", False):
+        get_asr_model()
     if _env_bool("VOXCPM_PRELOAD", False):
         get_tts_model()
+    if _env_bool("QWEN_TTS_PRELOAD", False):
+        get_qwen_tts_model()
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    get_asr_model()
     return {"status": "ok"}
 
 
@@ -137,6 +140,7 @@ async def openai_speech(
     input: Optional[str] = Form(default=None),
     model: str = Form(default="voxcpm"),
     voice: str = Form(default="default"),
+    language: str = Form(default="Auto"),
     response_format: str = Form(default="wav"),
     speed: float = Form(default=1.0),
     cfg_value: float = Form(default=2.0),
@@ -155,6 +159,7 @@ async def openai_speech(
             input=input or "",
             model=model,
             voice=voice,
+            language=language,
             response_format=response_format,
             speed=speed,
             cfg_value=cfg_value,
@@ -175,49 +180,101 @@ async def openai_speech(
     if prompt_audio is not None and request_payload.prompt_audio_url:
         raise HTTPException(status_code=400, detail="prompt_audio 和 prompt_audio_url 只能二选一")
 
+    provider = (request_payload.model or _env("TTS_PROVIDER", "voxcpm") or "voxcpm").strip().lower()
+    if provider in {"qwen", "qwen3-tts", "qwen-tts"}:
+        provider = "qwen-tts"
+    else:
+        provider = "voxcpm"
+
     text = request_payload.input.strip()
-    if request_payload.voice and request_payload.voice != "default":
-        text = f"({request_payload.voice}){text}"
 
     temp_paths: list[str] = []
-    tts_generate_kwargs: dict[str, Any] = {
-        "text": text,
-        "cfg_value": request_payload.cfg_value,
-        "inference_timesteps": request_payload.inference_timesteps,
-    }
+    reference_audio_path = ""
+    prompt_audio_path = ""
 
     try:
         max_bytes = _env_int("FUNASR_MAX_URL_FILE_SIZE", 50 * 1024 * 1024)
         if reference_audio is not None:
             reference_audio_path, _ = await _save_upload_file(reference_audio, "reference.wav")
             temp_paths.append(reference_audio_path)
-            tts_generate_kwargs["reference_wav_path"] = reference_audio_path
         elif request_payload.reference_audio_url:
             reference_audio_path, _ = _download_audio_from_url(
                 url=request_payload.reference_audio_url,
                 max_bytes=max_bytes,
             )
             temp_paths.append(reference_audio_path)
-            tts_generate_kwargs["reference_wav_path"] = reference_audio_path
 
         if prompt_audio is not None:
             prompt_audio_path, _ = await _save_upload_file(prompt_audio, "prompt.wav")
             temp_paths.append(prompt_audio_path)
-            tts_generate_kwargs["prompt_wav_path"] = prompt_audio_path
         elif request_payload.prompt_audio_url:
             prompt_audio_path, _ = _download_audio_from_url(
                 url=request_payload.prompt_audio_url,
                 max_bytes=max_bytes,
             )
             temp_paths.append(prompt_audio_path)
-            tts_generate_kwargs["prompt_wav_path"] = prompt_audio_path
 
-        if request_payload.prompt_text:
-            tts_generate_kwargs["prompt_text"] = request_payload.prompt_text
+        if provider == "voxcpm":
+            voxcpm_text = text
+            if request_payload.voice and request_payload.voice != "default":
+                voxcpm_text = f"({request_payload.voice}){voxcpm_text}"
 
-        model = get_tts_model()
-        wav = model.generate(**tts_generate_kwargs)
-        sample_rate = int(getattr(model.tts_model, "sample_rate", 48000))
+            tts_generate_kwargs: dict[str, Any] = {
+                "text": voxcpm_text,
+                "cfg_value": request_payload.cfg_value,
+                "inference_timesteps": request_payload.inference_timesteps,
+            }
+            if reference_audio_path:
+                tts_generate_kwargs["reference_wav_path"] = reference_audio_path
+            if prompt_audio_path:
+                tts_generate_kwargs["prompt_wav_path"] = prompt_audio_path
+            if request_payload.prompt_text:
+                tts_generate_kwargs["prompt_text"] = request_payload.prompt_text
+
+            tts_model = get_tts_model()
+            wav = tts_model.generate(**tts_generate_kwargs)
+            sample_rate = int(getattr(tts_model.tts_model, "sample_rate", 48000))
+        else:
+            qwen_model = get_qwen_tts_model()
+            qwen_language = request_payload.language or _env("QWEN_TTS_LANGUAGE", "Auto") or "Auto"
+
+            if reference_audio_path:
+                if not hasattr(qwen_model, "generate_voice_clone"):
+                    raise HTTPException(status_code=400, detail="当前 Qwen 模型不支持声音克隆，请切换 Base 模型")
+                clone_kwargs: dict[str, Any] = {
+                    "text": text,
+                    "language": qwen_language,
+                    "ref_audio": reference_audio_path,
+                }
+                if request_payload.prompt_text:
+                    clone_kwargs["ref_text"] = request_payload.prompt_text
+                else:
+                    clone_kwargs["x_vector_only_mode"] = True
+                wavs, sample_rate = qwen_model.generate_voice_clone(**clone_kwargs)
+                wav = wavs[0]
+            elif hasattr(qwen_model, "generate_custom_voice"):
+                custom_kwargs: dict[str, Any] = {
+                    "text": text,
+                    "language": qwen_language,
+                    "speaker": _env("QWEN_TTS_SPEAKER", "Vivian") or "Vivian",
+                }
+                if request_payload.voice and request_payload.voice != "default":
+                    custom_kwargs["instruct"] = request_payload.voice
+                wavs, sample_rate = qwen_model.generate_custom_voice(**custom_kwargs)
+                wav = wavs[0]
+            elif hasattr(qwen_model, "generate_voice_design"):
+                instruct = request_payload.voice if request_payload.voice != "default" else (_env("QWEN_TTS_DEFAULT_INSTRUCT") or "")
+                if not instruct:
+                    raise HTTPException(status_code=400, detail="当前 Qwen 模型需要 voice/instruct 参数")
+                wavs, sample_rate = qwen_model.generate_voice_design(
+                    text=text,
+                    language=qwen_language,
+                    instruct=instruct,
+                )
+                wav = wavs[0]
+            else:
+                raise HTTPException(status_code=500, detail="当前 Qwen 模型不支持可用的语音生成方法")
+
         audio_bytes = _wav_bytes_from_array(wav, sample_rate)
     except HTTPException:
         raise
@@ -235,5 +292,6 @@ async def openai_speech(
     headers = {
         "Content-Disposition": 'inline; filename="speech.wav"',
         "X-Speech-Model": request_payload.model,
+        "X-TTS-Provider": provider,
     }
     return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
