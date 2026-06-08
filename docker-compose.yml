@@ -7,7 +7,26 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # 运行设备: cpu 或 cuda
       FUNASR_DEVICE: cpu
+
+      # 主模型
       FUNASR_MODEL: iic/SenseVoiceSmall
+
+      # 可选子模型（VAD/标点/说话人分离）
       FUNASR_VAD_MODEL: fsmn-vad
+      FUNASR_PUNC_MODEL: ct-punc
+      FUNASR_SPK_MODEL: cam++
+
+      # 模型来源（留空表示使用默认来源）
+      FUNASR_HUB: ""
+
+      # 是否信任远端代码（仅在必要模型场景开启）
+      FUNASR_TRUST_REMOTE_CODE: "false"
+
+      # 是否禁用 FunASR 版本更新检查
+      FUNASR_DISABLE_UPDATE: "true"
+
+      # URL 音频下载最大字节数（默认 50MB）
+      FUNASR_MAX_URL_FILE_SIZE: "52428800"
     restart: unless-stopped
