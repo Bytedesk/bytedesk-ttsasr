@@ -105,7 +105,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "voxcpm",
-    "input": "你好，欢迎使用 Bytedesk 语音服务。",
+    "input": "你好，欢迎使用 微语 语音服务。",
     "voice": "年轻女声，温柔自然",
     "response_format": "wav"
   }' \
@@ -128,7 +128,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "qwen-tts",
-    "input": "你好，欢迎使用 Qwen3-TTS。",
+    "input": "你好，欢迎使用 微语 语音服务。",
     "voice": "语气轻快自然",
     "language": "Chinese",
     "response_format": "wav"
