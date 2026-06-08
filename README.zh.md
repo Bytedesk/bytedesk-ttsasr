@@ -1,6 +1,6 @@
 # bytedesk-ttsasr
 
-基于 FunASR + VoxCPM 的 Docker 化语音服务，提供 HTTP 接口，方便被其他服务直接调用实现 ASR 和 TTS。
+基于 FunASR + 多 TTS Provider（VoxCPM / Qwen3-TTS）的 Docker 化语音服务，提供 HTTP 接口，方便被其他服务直接调用实现 ASR 和 TTS。
 
 **语言 / Language:** [中文](README.zh.md) | [English](README.md)
 
@@ -9,7 +9,7 @@
 - 上传音频文件后返回识别结果
 - 文本转语音，返回 wav 音频流
 - 默认使用 `iic/SenseVoiceSmall + fsmn-vad`
-- 默认使用 `openbmb/VoxCPM2` 提供 TTS
+- 默认使用 `openbmb/VoxCPM2` 提供 TTS，并支持 `qwen-tts`
 - 支持通过环境变量切换模型、设备和可选能力
 - 适合以 Docker / Docker Compose 方式部署
 
@@ -242,6 +242,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `VOXCPM_DEVICE`: 默认 `cpu`，可按需设置为 `cuda`
 - `VOXCPM_LOAD_DENOISER`: 是否加载 denoiser，默认 `false`
 - `VOXCPM_PRELOAD`: 容器启动时是否预加载 TTS 模型，默认 `false`
+- `TTS_PROVIDER`: 默认 TTS provider，支持 `voxcpm` 和 `qwen-tts`，默认 `voxcpm`
 - `QWEN_TTS_MODEL`: 默认 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
 - `QWEN_TTS_SOURCE`: 模型来源，支持 `auto`、`huggingface`、`modelscope`，默认 `modelscope`
 - `QWEN_TTS_MODELSCOPE_MODEL`: ModelScope 模型名，默认 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
